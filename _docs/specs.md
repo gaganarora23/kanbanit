@@ -1,395 +1,175 @@
-# Team Kanban Tool — MVP Specification
+# Kanvas — Kanban Tool Specification
+
+> Supersedes the earlier single-board MVP spec. The frontend (`gaganarora23/lovable-tasks`,
+> local working copy at `frontend/`) was generated with Lovable as "Kanvas — Mini Kanban Board"
+> and already implements the model below, including a mock API contract
+> (`frontend/mock-api/`) meant to be backed by this repo's FastAPI backend. This spec documents
+> that model so the backend can be built to match it.
 
 ## 1. Product Goal
 
-A simple Kanban board for small teams to manage shared work.
+A lightweight, multi-project kanban board for a small team to track work across several
+projects at once.
 
-The MVP is frontend-first, uses a single board, one fixed/mock user context, and persists data in browser `localStorage`. There is no authentication or backend in the MVP.
+The frontend keeps state in memory + `localStorage` today. The mock API contract in
+`frontend/mock-api/` (OpenAPI spec + seed data) defines the shape the FastAPI backend should
+implement so the frontend's store (`src/lib/kanban/store.tsx`) can be pointed at real `fetch()`
+calls with no component changes.
 
-## 2. MVP Scope
+## 2. Scope
 
 ### Users and Roles
 
-- Small-team use case.
-- Roles:
-  - **Admin**
-  - **Member**
-- Admin creates/manages users.
-- Board access is limited to the owner and invited/created team members.
-- MVP does not implement authentication.
-- MVP uses a fixed/mock user context rather than real login.
+- Small-team use case, no authentication in this phase.
+- A fixed set of team members (seed: You, Marc O., Lena V.), one of them flagged `isYou`.
+- No Admin/Member distinction and no per-user permissions — any team member can perform any
+  action.
 
-### Board
+### Projects
 
-- Exactly one board.
-- The board represents the team's overall work.
-- Fixed columns:
-  1. Backlog
-  2. To Do
-  3. In Progress
-  4. Done
-- Columns cannot be renamed, reordered, added, or removed in the MVP.
+- Multiple projects exist side by side (seed: Atlas Redesign, Mobile App, Design System,
+  Marketing Site).
+- Each project has an id, name, and color, and owns its own set of tasks.
+- The sidebar lists all projects with an open-task count; selecting one shows its board.
 
-### Cards
+### Board / Columns
 
-Cards represent individual tasks.
+Each project's board has four fixed columns, identified by `status`:
 
-Each card has:
+1. `parked` — "Parked / Backlog"
+2. `todo` — "To Do"
+3. `in_progress` — "In Progress"
+4. `complete` — "Complete"
 
-- Numeric incremental ID
-- Title
-- Description
-- Assignee — exactly one person
-- Priority — Low / Medium / High
-- Labels
-- Column/status
-- Optional WIP-limit state derived from its current column
+Columns are not renameable, reorderable, addable, or removable.
 
-Card IDs are generated incrementally and remain stable even when the title changes.
+### Tasks
 
-### Card Operations
+Each task has:
 
-Board members can:
+- `id` (string)
+- `projectId` — the project it belongs to
+- `title`
+- `description` (optional)
+- `status` — one of `parked` / `todo` / `in_progress` / `complete`
+- `priority` — one of `P1` (urgent) / `P2` (high) / `P3` (medium) / `P4` (low), or `null`
+- `labelIds` — zero or more labels
+- `assigneeId` — exactly one member, or `null` (unassigned)
+- `due` (optional, free-form string, e.g. "Today", "Mon", "2w", "60%")
+- `createdAt` (ISO-8601 timestamp)
 
-- Create cards
-- Edit cards
-- Drag cards between columns
-- Assign cards
-- Change priority
-- Add/remove labels
-- Delete cards
+### Task Operations
 
-Card deletion requires confirmation.
+Team members can:
 
-Cards remain visible indefinitely after reaching **Done**.
+- Create a task (inline "Add a task to `<column>`..." input, or the "+ New task" button)
+- Edit a task's title, description, priority, labels, and assignee
+- Move a task between columns via drag-and-drop, or reorder it within a column
+- Delete a task
 
-There is no automatic archival.
+There is no WIP-limit concept and no confirmation step is required for deletion in the current
+frontend implementation.
 
 ### Labels
 
-Initial system labels:
-
-- Bug
-- Feature
-- Enhancement
-- Documentation
-
-The mock already supports adding labels, so users can create additional labels.
-
-### WIP Limits
-
-- WIP limits are optional and configured per column.
-- If a column's WIP limit is exceeded:
-  - The card move is still allowed.
-  - The UI displays a clear visual warning.
-- WIP limits do not block users from moving cards.
+Seed labels: Bug, Feature, Research, Content, Mobile, API, Ideas, Shipped — each with a name and
+color. New labels can be created (name + color) and attached to tasks.
 
 ### Views
 
-MVP has one primary view:
+- One primary view per project: its kanban board.
+- Switching projects via the sidebar is the only navigation.
 
-- Kanban board
+## 3. Data Model
 
-No separate My Cards view, dashboard, reporting view, or activity view.
+```text
+Project
+- id: string
+- name: string
+- color: string        # hex
 
-### Comments and History
+Task
+- id: string
+- projectId: string
+- title: string
+- description?: string
+- status: parked | todo | in_progress | complete
+- priority: P1 | P2 | P3 | P4 | null
+- labelIds: string[]
+- assigneeId: string | null
+- due?: string
+- createdAt: string     # ISO-8601
 
-Not included in MVP:
+Label
+- id: string
+- name: string
+- color: string         # hex
 
-- Comments
-- @mentions
-- Attachments
-- Activity log
-- Audit history
-
-### Due Dates and Notifications
-
-Not included in MVP:
-
-- Due dates
-- Due times
-- Reminders
-- Notifications
-
-## 3. Permissions
-
-### Admin
-
-Admin can:
-
-- View board
-- Create/edit/move/delete cards
-- Manage users
-- Manage labels
-- Configure WIP limits
-
-### Member
-
-Members can:
-
-- View board
-- Create cards
-- Edit cards
-- Move cards
-- Assign cards
-- Change priority
-- Manage card labels
-- Delete cards
-
-All board members have the same card-level permissions.
+Member
+- id: string
+- name: string
+- initials: string
+- color: string          # hex
+- isYou?: boolean
+```
 
 ## 4. Persistence
 
-MVP uses browser `localStorage`.
+Today: browser `localStorage`, keyed `kanvas-board-state-v1`, holding projects/tasks/labels/
+members as one object. Survives refresh.
 
-Requirements:
+Future: replace the store's in-memory/localStorage actions with calls to the API described
+below, backed by this repo's FastAPI + PostgreSQL backend. The component layer should not need
+to change.
 
-- Card creation persists across refreshes.
-- Card edits persist across refreshes.
-- Card movement persists across refreshes.
-- User changes persist across refreshes.
-- Label changes persist across refreshes.
-- WIP-limit configuration persists across refreshes.
-- Deleted cards remain deleted after refresh.
+## 5. API Contract (for the backend to implement)
 
-A reset-to-default capability should be available for development/demo purposes.
+Full contract: `frontend/mock-api/openapi.yaml`. Seed data matching it: `frontend/mock-api/db.json`.
 
-## 5. Initial Seed Data
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/projects` | List projects |
+| POST | `/projects` | Create a project |
+| GET | `/projects/{projectId}/tasks` | List a project's tasks |
+| POST | `/tasks` | Create a task |
+| PATCH | `/tasks/{taskId}` | Update a task |
+| DELETE | `/tasks/{taskId}` | Delete a task |
+| POST | `/tasks/{taskId}/move` | Move a task to a column, optionally before another task |
+| GET | `/labels` | List labels |
+| POST | `/labels` | Create a label |
+| GET | `/members` | List members |
+| POST | `/members` | Create a member |
 
-The application should initialize with useful demo data rather than an empty board.
+`POST /tasks/{taskId}/move` takes `{ status, beforeTaskId? }` — moves the task to `status`, and
+positions it immediately before `beforeTaskId` within that column, or appends to the end if
+`beforeTaskId` is omitted.
 
-Seed data should include:
+## 6. Non-Goals (current phase)
 
-- A small set of mock team members.
-- A small set of representative cards.
-- Initial labels:
-  - Bug
-  - Feature
-  - Enhancement
-  - Documentation
-- Sensible example priorities and assignments.
-- Example cards distributed across the Kanban columns.
-
-The exact seed content can follow the existing Lovable mock.
-
-## 6. Data Model
-
-### Board
-
-```text
-Board
-- id
-- name
-- columns[]
-- wipLimits{}
-- labelIds[]
-- memberIds[]
-```
-
-Because the MVP has exactly one board, the board ID can remain a fixed value.
-
-### User
-
-```text
-User
-- id
-- name
-- role: ADMIN | MEMBER
-```
-
-### Card
-
-```text
-Card
-- id: number
-- title: string
-- description: string
-- assigneeId: string
-- priority: LOW | MEDIUM | HIGH
-- labelIds: string[]
-- columnId: BACKLOG | TODO | IN_PROGRESS | DONE
-```
-
-### Label
-
-```text
-Label
-- id
-- name
-```
-
-### WIP Limits
-
-WIP limits can be represented as a mapping:
-
-```text
-wipLimits = {
-  BACKLOG: null,
-  TODO: 5,
-  IN_PROGRESS: 3,
-  DONE: null
-}
-```
-
-`null` means there is no WIP limit.
-
-## 7. Local Storage
-
-Use a single application state object rather than scattering independent pieces of state across many storage keys.
-
-Conceptually:
-
-```text
-kanbanState
-├── board
-├── users
-├── cards
-├── labels
-└── settings
-```
-
-Persist the complete state whenever relevant state changes.
-
-## 8. Card ID Generation
-
-Card IDs are incremental integers.
-
-Example:
-
-```text
-1001
-1002
-1003
-1004
-```
-
-When creating a card:
-
-1. Find the current highest card ID.
-2. Increment it.
-3. Assign the new number to the card.
-4. Never reuse IDs from deleted cards.
-
-This keeps IDs stable and avoids problems caused by using editable titles as identifiers.
-
-## 9. Core User Flows
-
-### Create Card
-
-1. User selects Add Card.
-2. User enters card information.
-3. System assigns the next incremental numeric ID.
-4. Card is added to the selected column.
-5. State is persisted to localStorage.
-
-### Move Card
-
-1. User drags a card.
-2. System updates its column.
-3. If the destination column exceeds its WIP limit, the move still succeeds.
-4. The column/card displays the WIP warning.
-5. State is persisted.
-
-### Edit Card
-
-1. User opens a card.
-2. User changes editable fields.
-3. System saves changes.
-4. State is persisted.
-
-### Delete Card
-
-1. User selects Delete.
-2. Confirmation is displayed.
-3. If confirmed, the card is removed.
-4. State is persisted.
-
-### Add Label
-
-1. User opens label management.
-2. User creates a label.
-3. Label becomes available for cards.
-4. State is persisted.
-
-## 10. Non-Goals for MVP
-
-Do not build:
-
-- Authentication
-- Authorization backed by a server
-- FastAPI backend
-- Database
+- Authentication / authorization
+- Admin vs. Member roles or any per-user permissions
+- WIP limits
+- Comments, @mentions, attachments, activity/audit log
+- Due dates as real dates/times, reminders, notifications
 - Real-time collaboration
-- Multiple boards
-- Projects
-- Subtasks
-- Epics
-- Comments
-- Attachments
-- Notifications
-- Due dates
-- Activity/audit history
-- Reporting/analytics
-- My Cards view
-- Automated card movement
-- Workflow automation
-- External integrations
-- Email notifications
+- Reporting/analytics, a "My Tasks" view
 
-## 11. Future Architecture Direction
+## 7. Success Criteria
 
-Although the MVP uses localStorage, the frontend state model should be structured so a future backend can replace local persistence without requiring a major UI rewrite.
+The current phase is complete when a small team can, per project:
 
-Future architecture:
+1. See all projects and their open-task counts in the sidebar.
+2. Open a project's board and see its tasks distributed across the four columns.
+3. Create a task via the inline column input or the "New task" button.
+4. Assign it to a team member, set its priority, and attach labels.
+5. Drag it between columns, and reorder it within a column.
+6. Edit a task's details.
+7. Delete a task.
+8. Refresh the browser without losing any changes.
+9. Create a new label on the fly.
 
-```text
-Current MVP
+## 8. Product Principle
 
-React/UI
-   ↓
-State Management
-   ↓
-localStorage
-
-
-Future
-
-React/UI
-   ↓
-State Management
-   ↓
-API Client
-   ↓
-FastAPI
-   ↓
-Database
-```
-
-The UI should therefore avoid coupling components directly to `localStorage`. Use a small persistence/service layer so that localStorage can later be replaced by API calls.
-
-## 12. MVP Success Criteria
-
-The MVP is complete when a small team can:
-
-1. Open the board.
-2. See team members and existing work.
-3. Create a task.
-4. Assign it to one team member.
-5. Set priority.
-6. Add labels.
-7. Move the task through the four Kanban columns.
-8. See WIP warnings when limits are exceeded.
-9. Edit a task.
-10. Delete a task with confirmation.
-11. Refresh the browser without losing changes.
-12. Manage labels and WIP limits as an admin.
-
-## 13. Product Principle
-
-Keep the MVP intentionally simple.
-
-The core loop is:
-
-**Create → Assign → Prioritize → Move → Complete**
-
-Avoid adding collaboration, automation, reporting, or workflow complexity until the basic Kanban experience is working well.
+Keep the board fast and low-friction: inline task creation, drag-and-drop, no required fields
+beyond a title. Defer roles, WIP limits, and other process controls until there's a concrete
+need for them.
